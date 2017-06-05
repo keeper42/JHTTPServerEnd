@@ -1,0 +1,24 @@
+#user  nobody;
+worker_processes  1;
+
+events{
+    worker_connections  1024;
+}
+
+http{
+    server{
+        listen 80;
+        server_name localhost;
+        location{
+            root html;
+            index index.html index.htm;
+            proxy_pass http://keepfriend.cn;
+            proxy_set_header host localhost;
+            proxy_set_header port 8080;
+        }
+        error_page 500 501 502 503 504 /50x.html;
+        location = /50x.html{
+            root html;
+        }
+    }
+}
