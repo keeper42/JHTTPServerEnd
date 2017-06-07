@@ -1,8 +1,8 @@
 package main.FileServer;
 // Created by LJF on 2017/6/4.
 
-import javax.xml.ws.spi.http.HttpExchange;
 import java.io.*;
+import com.sun.net.httpserver.HttpExchange;
 
 public class FileUploadUtil {
 
@@ -10,11 +10,70 @@ public class FileUploadUtil {
     private String boundary;    // Used to determine the boundaries of the index file
     private String contentType;
 
+    public FileUploadUtil(String fileName, String boundary, String contentType){
+        this.fileName = fileName;
+        this.boundary = boundary;
+        this.contentType = contentType;
+    }
+
+    public FileUploadUtil(){}
+
     public void flieUpload(HttpExchange httpExchange, String path){
 
-        // Here I will achieve the file upload function...
+        try{
+            InputStream is = httpExchange.getRequestBody();
+            BufferedInputStream bis = new BufferedInputStream(is);
+            int len = 0;
+            boolean isStart = true;
+            byte[] buffer = new byte[1024];
+            OutputStream os = null;
+            while((len = bis.read(buffer)) != -1){
+                // Judgment is not the delimiter of the file, if not, read the temporary file.
+                if(isStart) {
+                    int startReadIndex = getFileReadIndex(buffer);
+                    isStart = false;
+                    if (fileName != null) {
+                        File file = new File(path, fileName);
+                        if (!file.exists()) {
+                            file.createNewFile();
+                        }
+                        os = new FileOutputStream(file);
+                        byte[] realData = cartByte(buffer, startReadIndex, buffer.length - startReadIndex);
+                        String dataStr = new String(realData);
+                        if (dataStr.contains("-")) {
+                            realData = cartByte(realData, 0, getIndexOf(realData, "-".getBytes()) - "\r\n-".getBytes().length);
+                            os.write(realData);
+                            os.close();
+                            break;
+                        }
+                        os.write(buffer, startReadIndex, buffer.length - startReadIndex);
+                        continue;
+                    }
+                }
+                if(os == null){
+                    break;
+                }
+                // If buffer includes the terminator, the outputstream reads the previous data only.
+                String bufferStr = new String(buffer);
+                if(!bufferStr.contains(boundary)){
+                    os.write(buffer, 0, len);
+                }else{
+                    buffer = cartByte(buffer, 0, getIndexOf(buffer, boundary.getBytes()) - 2);
+                    os.write(buffer, 0, buffer.length - 1);
+                    os.close();
+                    break;
+                }
+                System.out.println("Filename: " + fileName);
+            }
+        } catch (Exception e){
+            e.printStackTrace();
+        }
 
     }
+
+    /**
+     * The following functions refer to some blogs.
+     */
 
     public int getFileReadIndex(byte[] buffer){
         // Read four '\n' symbols to check if it is a file
@@ -28,12 +87,6 @@ public class FileUploadUtil {
         }
         return 0;
     }
-
-    /**
-     * The following functions refer to some blogs.
-     * @param buffer
-     * @return
-     */
 
     public boolean isFileBoundary(byte[] buffer){
         String fileItem = new String(buffer);
@@ -61,6 +114,13 @@ public class FileUploadUtil {
         return 0;
     }
 
+    /**
+     * Get byte [] to specify the starting position of the array.
+     * @param source
+     * @param beginIndex
+     * @param endIndex
+     * @return
+     */
     public byte[] cartByte(byte[] source, int beginIndex, int endIndex){
 
         if(source == null || source.length <= 0 || endIndex - beginIndex <= 0){
@@ -74,11 +134,17 @@ public class FileUploadUtil {
         return returnData;
     }
 
+    /**
+     * Gets the position of a string of byte arrays in the original byte array.
+     * @param source
+     * @param part
+     * @return
+     */
     public static int getIndexOf(byte[] source ,byte[] part){
         if (source == null || part == null || source.length == 0 || part.length == 0){
             return -1;
         }
-        int i,j;
+        int i, j;
         for(i = 0;i < source.length; i++){
             if(source[i] == part[0]){
                 for(j = 0;j < part.length; j++)
