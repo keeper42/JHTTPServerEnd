@@ -1,14 +1,9 @@
 package main.BasicServer;
-// Created by LJF on 2017/6/1. 
+// Created by LJF on 2017/6/1.
+// re-created by CB on 2017/6/7.
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
-import java.io.DataInputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
+import javax.xml.crypto.Data;
+import java.io.*;
 import java.net.Socket;
 import java.util.Date;
 import java.util.List;
@@ -60,140 +55,325 @@ public class RequestProcessor implements Runnable {
 
     @Override
     public void run() {
-
-        String root = documentRootDirectory.getPath();
-
         while (true) {
             Socket connection;
+            String requestLine = null;
+            String requestHeader = null;
+            BufferedReader br = null;
+
+            // Get connection
             synchronized (pool) {
                 while (pool.isEmpty()) {
                     try {
                         pool.wait();
                     } catch (InterruptedException e) {
+                        e.printStackTrace();
                     }
                 }
-                connection = (Socket)pool.remove(0);
+                connection = (Socket) pool.remove(0);
             }
 
             try {
-                String fileName;
-                String contentType;
-                BufferedOutputStream bos = new BufferedOutputStream(connection.getOutputStream());
-                OutputStreamWriter out = new OutputStreamWriter(bos);
-                InputStreamReader isr = new InputStreamReader(new BufferedInputStream(connection.getInputStream()), "ASCII");
+                br = new BufferedReader(new InputStreamReader(connection.getInputStream()));
 
-                StringBuffer request = new StringBuffer(80);
-                while (true) {
-                    int ch = isr.read();
-                    if (ch == '\t' || ch == '\n' || ch == -1) {
-                        break;
-                    }
-                    request.append((char) ch);
+                // Get the Request Line
+                requestLine = br.readLine();
+                System.out.println("Get request. Here is the Request Line:\n" + requestLine + "\n");
+
+                // Get the Request Header
+                StringBuilder sb = new StringBuilder();
+                String line = br.readLine();
+                while (!(line==null || line.equals("") || line.equals("\r\n"))) {
+                    //System.out.println(line);
+                    sb.append(line);
+                    sb.append("\r\n");
+                    line = br.readLine();
+                }
+                requestHeader = sb.toString();
+                System.out.println("Here is the request header:\n" + requestHeader);
+
+                // Deal with the request
+                if(requestLine != null) {
+                    if (requestLine.startsWith("GET"))
+                        get(connection, requestLine);
+                    else if (requestLine.startsWith("POST"))
+                        post(connection, requestHeader, br);
+                    else
+                        error501(connection);
+                    System.out.println("Respond Complete.");
+                    System.out.println("Socket closed.");
+                    System.out.println("--------------------------------------------------------------------------\n");
                 }
 
-                // Print the request log.
-                String req = request.toString();
-                System.out.println(req);
+                connection.close();
 
-                String version = "";
-                Date now = new Date();
-                StringTokenizer st = new StringTokenizer(req);
-                String method = st.nextToken();
-
-                // Judging whether the request is a get request.
-                if (method == "GET" || method.contains("GET")) {
-
-                    System.out.println("The request was successful");
-
-                    fileName = st.nextToken();
-                    if (fileName.endsWith("/")) {
-                        fileName += indexFileName;
-                    }
-                    contentType = guessContentTypeFromName(fileName);
-                    if (st.hasMoreTokens()) {
-                        version = st.nextToken();
-                    }
-
-                    // Create a new request file and load it into the DataInputStream.
-                    File requestFile = new File(documentRootDirectory,fileName.substring(1,fileName.length()));
-                    if (requestFile.canRead() && requestFile.getCanonicalPath().startsWith(root)) {
-                        DataInputStream fis = new DataInputStream(new BufferedInputStream(new FileInputStream(requestFile)));
-                        byte[] requestData = new byte[(int)requestFile.length()];
-                        fis.readFully(requestData);
-
-                        // Create the response and load it into the OutputStreamWriter, and so on.
-                        if (version.startsWith("HTTP")) {
-                            out.write("HTTP/1.1 200 OK\r\n");
-                            out.write("Date: " + now + "\r\n");
-                            out.write("Server: JHTTP 1.1\r\n");
-                            out.write("Content-length: " + requestData.length + "\r\n");
-                            out.write("Content-Type: " + contentType + "\r\n\r\n");
-                            out.flush();
-                        }
-                        bos.write(requestData);
-                        bos.flush();
-                        bos.close();
-                        fis.close();
-                    }else {
-                        if (version.startsWith("HTTP")) {
-                            out.write("HTTP/1.1 404 File Not Found\r\n");
-                            out.write("Date: " + now + "\r\n");
-                            out.write("Server: JHTTP 1.1\r\n");
-                            out.write("Content-Type: text/html\r\n\r\n");
-                            out.flush();
-                        }
-                        out.write("<HTML>\r\n");
-                        out.write("<HEAD><TITLE>File Not Found</TITLE></HRAD>\r\n");
-                        out.write("<BODY>\r\n");
-                        out.write("<H1>HTTP Error 404: File Not Found</H1>");
-                        out.write("</BODY></HTML>\r\n");
-                    }
-                }else {
-                    if (version.startsWith("HTTP")) {
-                        out.write("HTTP/1.1 501 Not Implemented\r\n");
-                        out.write("Date: " + now + "\r\n");
-                        out.write("Server: JHTTP 1.1\r\n");
-                        out.write("Content-Type: text/html\r\n\r\n");
-                        out.flush();
-                    }
-                    out.write("<HTML>\r\n");
-                    out.write("<HEAD><TITLE>Not Implemented</TITLE></HRAD>\r\n");
-                    out.write("<BODY>\r\n");
-                    out.write("<H1>HTTP Error 501: Not Implemented</H1>");
-                    out.write("</BODY></HTML>\r\n");
-                }
-                out.close();
-            } catch (IOException e) {
-
-            }finally{
-                try {
-                    connection.close();
-                } catch (IOException e2) {
-
-                }
+            }catch (IOException e){
+                e.printStackTrace();
             }
         }
     }
 
-    /**
-     * Judging the type of contentype.
-     * @param fileName
-     * @return
-     */
-    public static String guessContentTypeFromName(String fileName) {
-        if (fileName.endsWith(".html") || fileName.endsWith(".htm")) {
-            return "text/html";
-        }else if (fileName.endsWith(".txt") || fileName.endsWith(".java")) {
-            return "text/plain";
-        }else if (fileName.endsWith(".gif")) {
-            return "image/gif";
-        }else if (fileName.endsWith(".class")) {
-            return "application/octet-stream";
-        }else if (fileName.endsWith(".jpg") || fileName.endsWith(".jpeg")) {
-            return "image/jpeg";
-        }else {
-            return "text/plain";
+    // Deal with the GET Request
+    private void get(Socket socket, String requestLine){
+        String fileName;
+        String contentType;
+        Date now = new Date();
+        String root = documentRootDirectory.getPath();
+
+        // get the File Name
+        String[] parts = requestLine.split(" ");
+        fileName = parts[1];
+        if (fileName.endsWith("/")) {
+            fileName += indexFileName;
+        }
+
+        // get the Content Type
+        if (fileName.endsWith("html") || fileName.endsWith("htm"))
+            contentType = "text/html";
+        else if (fileName.endsWith("jpg") || fileName.endsWith("jpeg"))
+            contentType = "image/jpeg";
+        else if (fileName.endsWith("gif"))
+            contentType = "image/gif";
+        else if (fileName.endsWith("txt"))
+            contentType = "text/plain";
+        else if (fileName.endsWith(".class"))
+            contentType = "application/octet-stream";
+        else
+            contentType = "text/plain";
+
+        // send the response
+        try {
+            BufferedOutputStream bos = new BufferedOutputStream(socket.getOutputStream());
+            OutputStreamWriter osw = new OutputStreamWriter(bos);
+            File requestFile = new File(documentRootDirectory,fileName.substring(1,fileName.length()));
+            // successfully find the file, and send
+            if (requestFile.canRead()){
+                DataInputStream fis = new DataInputStream(new BufferedInputStream(new FileInputStream(requestFile)));
+                byte[] requestData = new byte[(int)requestFile.length()];
+                fis.readFully(requestData);
+                // send the status line and header
+                osw.write("HTTP/1.1 200 OK\r\n");
+                osw.write("Date: " + now + "\r\n");
+                osw.write("Server: JHTTP 1.1\r\n");
+                osw.write("Content-length: " + requestData.length + "\r\n");
+                osw.write("Content-Type: " + contentType + "\r\n\r\n");
+                osw.flush();
+                // send the body, the required file
+                bos.write(requestData);
+                bos.flush();
+                fis.close();
+                System.out.println("Successfully sent the file.");
+            }
+            // fail to find the file, send 404 error page
+            else {
+                String errorResponseHead = "";
+                errorResponseHead += "HTTP/1.1 404 File Not Found\r\n";
+                errorResponseHead += "Date: " + now + "\r\n";
+                errorResponseHead += "Server: JHTTP 1.1\r\n";
+                errorResponseHead += "Content-Type: text/html\r\n\r\n";
+                String errorResponseBody = "";
+                errorResponseBody += "<!DOCTYPE html>\r\n";
+                errorResponseBody += "<html>\r\n";
+                errorResponseBody += "<head><title>File Not Found</title></head>\r\n";
+                errorResponseBody += "<body>\r\n";
+                errorResponseBody += "<h1>HTTP Error 404: File Not Found</h1>\r\n";
+                errorResponseBody += "</body>\r\n</html>";
+                osw.write(errorResponseHead);
+                osw.write(errorResponseBody);
+                osw.flush();
+                System.out.println("Sent the 404 Error Page");
+            }
+        } catch (IOException e){
+            e.printStackTrace();
         }
     }
 
+    // Deal with the POST Request
+    private void post(Socket socket, String requestHeader, BufferedReader br) {
+        String requestBody;
+        String boundary;
+        int contentLength = 0;
+        Date now = new Date();
+        String[] requestHeadLines = requestHeader.split("\r\n"); //split the request head into lines
+
+        // Analysis the request head
+        for(int i=0; i<requestHeadLines.length; i++){
+            if (requestHeadLines[i].contains("Content-Length")) {
+                String length = requestHeadLines[i].substring(requestHeadLines[i].indexOf("Content-Length") + 16);
+                contentLength = Integer.parseInt(length);
+                System.out.println("Get Content Length: " + contentLength);
+            }
+
+            // If it is a file upload
+            else if(requestHeadLines[i].contains("multipart/form-data")){
+                // Get multiltipart boundary
+                boundary = requestHeadLines[i].substring(requestHeadLines[i].indexOf("boundary") + 9);
+                System.out.println("Get boundary: " + boundary);
+                // 上传文件
+                doMultiPart(br, socket, boundary, contentLength, now);
+                return;
+            }
+        }
+
+        // If it is not a file upload
+        try {
+            BufferedOutputStream bos = new BufferedOutputStream(socket.getOutputStream());
+            OutputStreamWriter osw = new OutputStreamWriter(bos);
+            System.out.println("begin reading posted data......");
+
+            StringBuilder sb = new StringBuilder();
+            while (br.ready()){
+                sb.append((char)br.read());
+            }
+            requestBody = sb.toString();
+            System.out.println("Here is the request body:\n" + requestBody);
+
+            // send the response
+            String responseHead = "";
+            responseHead += "HTTP/1.1 200 OK\n";
+            responseHead += "Date: " + now + "\r\n";
+            responseHead += "Server: JHTTP 1.1\r\n";
+            responseHead += "Content-Type: text/html\r\n\r\n";
+            String responseBody = "";
+            responseBody += "<HTML>\r\n";
+            responseBody += "<HEAD><TITLE>Test POST</TITLE></HEAD>\r\n";
+            responseBody += "<BODY>\r\n";
+            responseBody += "<p>Post Successfully:</p>\r\n";
+            responseBody += "<p>" + requestBody +"</p>\r\n";
+            responseBody += "</BODY></HTML>\r\n";
+            osw.write(responseHead);
+            osw.write(responseBody);
+            osw.flush();
+            System.out.println("Successfully get the post and sent a response.");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Deal with file upload
+    private void doMultiPart(BufferedReader br, Socket socket, String boundary, int contentLength, Date now){
+        System.out.println("doMultiPart ......");
+        String dataString = null;
+        String fileName = null;
+
+        /*下面的注释是一个浏览器发送带附件的请求的全文，所有中文都是说明性的文字*****
+        <HTTP头部内容略>
+        ............
+        Cache-Control: no-cache
+        <这里有一个空行，表明接下来的内容都是要提交的正文>
+        -----------------------------7d925134501f6<这是multipart分隔符>
+        Content-Disposition: form-data; name="myfile"; filename="mywork.doc"
+        Content-Type: text/plain
+
+        <附件正文>........................................
+        .................................................
+
+        -----------------------------7d925134501f6<这是multipart分隔符>
+        Content-Disposition: form-data; name="myname"<其他字段或附件>
+        <这里有一个空行>
+        <其他字段或附件的内容>
+        -----------------------------7d925134501f6--<这是multipart分隔符，最后一个分隔符多两个->
+        ****************************************************************/
+        /**
+         * 上面的注释是一个带附件的multipart类型的POST的全文模型
+         * 要把附件去出来，就是要找到附件正文的起始位置和结束位置
+         * **/
+        if (contentLength != 0) {
+
+            //把所有的提交的正文，包括附件和其他字段都先读到字符串
+            char[] chs = new char[contentLength];
+            int totalRead;
+            try {
+                StringBuilder sb = new StringBuilder();
+                totalRead = br.read(chs, 0, contentLength);
+                sb.append(chs);
+                dataString = sb.toString();
+                System.out.println("totalread: " + totalRead);
+            }catch (NullPointerException | IOException e){
+                e.printStackTrace();
+            }
+
+            System.out.println("the data user posted:\n" + dataString);
+            int pos = dataString.indexOf(boundary);
+            //以下略过4行就是第一个附件的位置
+            pos = dataString.indexOf("\r\n", pos) + 1;
+            pos = dataString.indexOf("\r\n", pos) + 1;
+            pos = dataString.indexOf("\r\n", pos) + 1;
+            pos = dataString.indexOf("\r\n", pos) + 1;
+            //附件开始位置
+            int start = dataString.substring(0, pos).getBytes().length;
+            pos = dataString.indexOf(boundary, pos) - 4;
+            //附件结束位置
+            int end = dataString.substring(0, pos).getBytes().length;
+            //以下找出filename
+            int fileNameBegin = dataString.indexOf("filename") + 10;
+            int fileNameEnd = dataString.indexOf("\r\n", fileNameBegin);
+            fileName = dataString.substring(fileNameBegin, fileNameEnd - 1);
+
+            System.out.println("Get filename: " + fileName);
+            /*
+             * 有时候上传的文件显示完整的文件名路径,比如c:/my file/somedir/project.doc
+             * 但有时候只显示文件的名字，比如myphoto.jpg.
+             * 所以需要做一个判断。
+             */
+            if(fileName.contains("/")){
+                fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
+            }
+            try {
+                byte[] buf = dataString.getBytes();
+                OutputStream fileOut = new FileOutputStream(System.getProperty("user.dir") + "/uploads/" + fileName);
+                fileOut.write(buf, start, end - start);
+                fileOut.close();
+                System.out.println("file saved: " + System.getProperty("user.dir") + "/uploads/" + fileName);
+            } catch (IOException e){
+                e.printStackTrace();
+            }
+        }
+
+        // send the response
+        try {
+            BufferedOutputStream bos = new BufferedOutputStream(socket.getOutputStream());
+            OutputStreamWriter osw = new OutputStreamWriter(bos);
+            String responseHead = "";
+            responseHead += "HTTP/1.1 200 OK\r\n";
+            responseHead += "Date: " + now + "\r\n";
+            responseHead += "Server: JHTTP 1.1\r\n";
+            responseHead += "Content-Type: text/html\r\n";
+            responseHead += "Accept-ranges: bytes\r\n\r\n";
+            String responseBody = "";
+            responseBody += "<HTML>\r\n";
+            responseBody += "<HEAD><TITLE>Test POST</TITLE></HEAD>\r\n";
+            responseBody += "<BODY>\r\n";
+            responseBody += "<p>Post Successfully:</p>\r\n";
+            responseBody += "<p>" + fileName +"</p>\r\n";
+            responseBody += "</BODY></HTML>\r\n";
+            osw.write(responseHead);
+            osw.write(responseBody);
+            osw.flush();
+            System.out.println("Successfully get the post and sent a response.");
+        }catch (IOException e){
+            e.printStackTrace();
+        }
+    }
+
+    // Deal with other request / Errorr501
+    private void error501(Socket socket){
+        Date now = new Date();
+        try {
+            BufferedOutputStream bos = new BufferedOutputStream(socket.getOutputStream());
+            OutputStreamWriter osw = new OutputStreamWriter(bos);
+            osw.write("HTTP/1.1 501 Not Implemented\r\n");
+            osw.write("Date: " + now + "\r\n");
+            osw.write("Server: JHTTP 1.1\r\n");
+            osw.write("Content-Type: text/html\r\n\r\n");
+            osw.flush();
+            osw.write("<HTML>\r\n");
+            osw.write("<HEAD><TITLE>Not Implemented</TITLE></HEAD>\r\n");
+            osw.write("<BODY>\r\n");
+            osw.write("<H1>HTTP Error 501: Not Implemented</H1>");
+            osw.write("</BODY></HTML>\r\n");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
 }
