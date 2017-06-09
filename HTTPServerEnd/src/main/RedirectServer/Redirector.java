@@ -1,11 +1,7 @@
 package main.RedirectServer;
 // Created by LJF on 2017/6/3.
 
-import java.io.BufferedInputStream;
-import java.io.BufferedWriter;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.OutputStreamWriter;
+import java.io.*;
 import java.net.BindException;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -15,17 +11,20 @@ public class Redirector implements Runnable {
 
     private int port;
     private String newSite;
+    private String log;
 
     public Redirector(String site, int port){
         this.port = port;
         this.newSite = site;
+        this.log = "";
     }
 
     @Override
     public void run() {
         try {
             ServerSocket server=new ServerSocket(port);
-            System.out.println("Redirecting connection on port "  + server.getLocalPort() + " to "+newSite);
+            log += "Redirecting connection on port: "  + server.getLocalPort() + " to " + newSite + "\r\n";
+            System.out.print(log);
 
             // Create new sockets and threads.
             while (true) {
@@ -72,6 +71,18 @@ public class Redirector implements Runnable {
 
                 String req = request.toString();
                 System.out.println(req);
+                log += req ;
+                File historyLogFile = new File("log/history.txt");
+                try {
+                    RandomAccessFile randomFile = new RandomAccessFile(historyLogFile, "rw");
+                    randomFile.seek(randomFile.length());
+                    randomFile.writeBytes(log + "\r\n");
+                    randomFile.close();
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
 
                 // Intercept the string and parse the request file.
                 int firstSpace = req.indexOf(' ');

@@ -5,10 +5,27 @@ import main.BasicServer.JHTTP;
 import main.RedirectServer.Redirector;
 
 import java.io.*;
+import java.util.Date;
 
 public class Main {
 
     public static void main(String[] args) {
+
+        Date date = new Date();
+        String log = "Date: " + date;
+        System.out.println(log);
+
+        File historyLogFile = new File("log/history.txt");
+        try {
+            RandomAccessFile randomFile = new RandomAccessFile(historyLogFile, "rw");
+            randomFile.seek(randomFile.length());
+            randomFile.writeBytes(log + "\r\n");
+            randomFile.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
 
         // New parser class and parsing configuration file
         ConfigParser config = new ConfigParser("conf/config.txt");

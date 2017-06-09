@@ -8,8 +8,6 @@ import java.net.Socket;
 import java.util.Date;
 import java.util.List;
 import java.util.LinkedList;
-import java.util.StringTokenizer;
-import java.util.concurrent.Executors;
 
 
 public class RequestProcessor implements Runnable {
@@ -17,7 +15,7 @@ public class RequestProcessor implements Runnable {
     private File documentRootDirectory;
     private String indexFileName;
     private static List pool = new LinkedList();
-
+    private String log;
     /**
      * Handle the constructor of the request class.
      * @param documentRootDirectory
@@ -39,6 +37,9 @@ public class RequestProcessor implements Runnable {
         if (indexFileName != null) {
             this.indexFileName=indexFileName;
         }
+
+        Date date = new Date();
+        this.log = String.valueOf(date);
     }
 
     public RequestProcessor(File documentRootDirectory){
@@ -78,7 +79,7 @@ public class RequestProcessor implements Runnable {
 
                 // Get the Request Line
                 requestLine = br.readLine();
-                System.out.println("Get request. Here is the Request Line:\n" + requestLine + "\n");
+                log += "Get request. Here is the Request Line:\n" + requestLine + "\r\n";
 
                 // Get the Request Header
                 StringBuilder sb = new StringBuilder();
@@ -90,7 +91,19 @@ public class RequestProcessor implements Runnable {
                     line = br.readLine();
                 }
                 requestHeader = sb.toString();
-                System.out.println("Here is the request header:\n" + requestHeader);
+                log += "Here is the request header:\n" + requestHeader + "\r\n";
+                System.out.println(log);
+                File historyLogFile = new File("log/history.txt");
+                try {
+                    RandomAccessFile randomFile = new RandomAccessFile(historyLogFile, "rw");
+                    randomFile.seek(randomFile.length());
+                    randomFile.writeBytes(log + "\r\n");
+                    randomFile.close();
+                } catch (FileNotFoundException e) {
+                    e.printStackTrace();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
 
                 // Deal with the request
                 if(requestLine != null) {

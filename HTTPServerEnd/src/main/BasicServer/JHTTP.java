@@ -1,8 +1,7 @@
 package main.BasicServer;
 // Created by LJF on 2017/6/1. 
 
-import java.io.File;
-import java.io.IOException;
+import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
 
@@ -40,9 +39,23 @@ public class JHTTP extends Thread {
             t.start();
         }
 
-        System.out.println("Accepting connection on port " + server.getLocalPort());
-        System.out.println("Document Root: " + documentRootDirectory);
-        System.out.println("Index file: " + indexFileName);
+        String log = "Accepting connection on port: " + server.getLocalPort() + "\r\n"
+                + "Document root: " + documentRootDirectory + "\r\n"
+                + "Index file: " + indexFileName + "\r\n";
+        System.out.println(log);
+
+        File historyLogFile = new File("log/history.txt");
+        try{
+            RandomAccessFile randomFile = new RandomAccessFile(historyLogFile, "rw");
+            randomFile.seek(randomFile.length());
+            randomFile.writeBytes(log + "\r\n");
+            randomFile.close();
+        } catch (FileNotFoundException e) {
+            e.printStackTrace();
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
         while (true) {
             try {
                 Socket request = server.accept();
