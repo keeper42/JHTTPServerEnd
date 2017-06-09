@@ -319,12 +319,18 @@ public class RequestProcessor implements Runnable {
             if(fileName.contains("/")){
                 fileName = fileName.substring(fileName.lastIndexOf("/") + 1);
             }
+            // 保存到文件夹/uploads，若不存在先创建
             try {
+                String savedRoot = System.getProperty("user.dir") + "/uploads/";
+                File root = new File(savedRoot);
+                if (!root.exists()){
+                    root.mkdir();
+                }
+                OutputStream fileOut = new FileOutputStream(savedRoot + fileName);
                 byte[] buf = dataString.getBytes();
-                OutputStream fileOut = new FileOutputStream(System.getProperty("user.dir") + "/uploads/" + fileName);
                 fileOut.write(buf, start, end - start);
                 fileOut.close();
-                System.out.println("file saved: " + System.getProperty("user.dir") + "/uploads/" + fileName);
+                System.out.println("file saved: " + savedRoot + fileName);
             } catch (IOException e){
                 e.printStackTrace();
             }
